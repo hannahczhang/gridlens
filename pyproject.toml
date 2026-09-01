@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gridlens"
+version = "0.1.0"
+description = "Local desktop GUI for running GridPACK contingency analysis through Docker"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-only" }
+authors = [
+  { name = "GridLens Contributors" }
+]
+keywords = ["gridpack", "contingency-analysis", "docker", "power-systems", "qt"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = [
+  "PySide6>=6.6,<7"
+]
+
+[project.optional-dependencies]
+analysis = [
+  "cuda-toolkit>=13.3,<14",
+  "cudf-cu13>=26.6,<27",
+  "cupy-cuda13x>=14.1,<15",
+  "dask-cuda>=26.6,<27",
+  "dask-cudf-cu13>=26.6,<27",
+  "matplotlib>=3.8",
+  "numba-cuda>=0.28",
+  "nvidia-nccl-cu13>=2.27,<3",
+  "pandas>=2.2",
+  "dask[dataframe]>=2024.1",
+  "distributed>=2024.1",
+  "pyarrow>=15"
+]
+web = [
+  "fastapi>=0.116,<1",
+  "PyJWT[crypto]>=2.10,<3",
+  "python-multipart>=0.0.20,<1",
+  "uvicorn>=0.35,<1"
+]
+dev = [
+  "tomli>=2; python_version < '3.11'",
+  "pytest>=8",
+  "pyinstaller>=6"
+]
+
+[project.scripts]
+gridlens = "gridlens.main:main"
+gridlens-api = "gridlens.webapi.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+gridlens = ["resources/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-config --strict-markers"
+xfail_strict = true
