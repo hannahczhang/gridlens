@@ -498,6 +498,19 @@ button:disabled {
   text-decoration: underline;
 }
 
+.success-text {
+  margin: 0;
+  color: var(--text-main);
+}
+
+.form-feedback {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-soft);
+}
+
 .log-viewer {
   overflow: auto;
   max-height: 360px;

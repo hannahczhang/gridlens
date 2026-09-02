@@ -39,6 +39,14 @@ function healthUrl(): string {
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
+    if (response.status === 413) {
+      throw new Error(
+        "Upload rejected by the web server because the file payload is too large. Increase nginx client_max_body_size on the API host and try again.",
+      );
+    }
+    if (text.includes("<html") || text.includes("<!doctype html")) {
+      throw new Error(`Request failed with status ${response.status}. The web server returned an HTML error page instead of API JSON.`);
+    }
     throw new Error(text || `Request failed with status ${response.status}`);
   }
   return response.json() as Promise<T>;

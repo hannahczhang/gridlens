@@ -535,8 +535,6 @@ export default function App() {
             <span className="status-pill ready">Authentication Required</span>
             <h2>Sign in to continue.</h2>
             <p className="hero-copy">
-              This deployment uses Amazon Cognito for email-and-password authentication and keeps each user limited to
-              their own projects, runs, and downloads.
             </p>
             {authError ? <p className="muted">{authError}</p> : null}
             <div className="panel-actions">
@@ -654,6 +652,10 @@ export default function App() {
             </label>
             <button type="submit">Upload Project Files</button>
           </form>
+          <div className="form-feedback" aria-live="polite">
+            {message.startsWith("Created project ") ? <p className="success-text">{message}</p> : null}
+            {error ? <p className="error-text">{error}</p> : null}
+          </div>
         </section>
 
         <section className="panel">
