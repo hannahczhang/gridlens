@@ -17,3 +17,6 @@ third_party/
 webapp/node_modules/
 webapp/dist/
 webapp/.env.local
+/node_modules/
+/package.json
+/package-lock.json
