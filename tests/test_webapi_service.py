@@ -5,6 +5,7 @@ import json
 import pytest
 
 from gridlens.core.project import Project
+from gridlens.webapi.backends import S3ObjectStore, load_storage_settings
 from gridlens.webapi.security import AuthenticatedUser
 from gridlens.webapi.service import list_projects, load_project_configuration, load_run, projects_root_for_user, read_run_status, resolve_run_file
 
@@ -115,6 +116,44 @@ def test_resolve_run_file_rejects_escape_paths(tmp_path) -> None:
         pass
     else:  # pragma: no cover - sanity guard
         raise AssertionError("Expected resolve_run_file to reject traversal paths")
+
+
+def test_storage_settings_default_to_local(monkeypatch) -> None:
+    monkeypatch.delenv("GRIDLENS_STORAGE_BACKEND", raising=False)
+    monkeypatch.delenv("GRIDLENS_AWS_REGION", raising=False)
+    monkeypatch.delenv("GRIDLENS_S3_BUCKET", raising=False)
+
+    settings = load_storage_settings()
+
+    assert settings.backend == "local"
+    assert settings.aws_region == "us-east-2"
+    assert settings.s3_bucket == ""
+
+
+def test_storage_settings_require_bucket_for_s3(monkeypatch) -> None:
+    monkeypatch.setenv("GRIDLENS_STORAGE_BACKEND", "s3")
+    monkeypatch.delenv("GRIDLENS_S3_BUCKET", raising=False)
+
+    with pytest.raises(RuntimeError, match="GRIDLENS_S3_BUCKET"):
+        load_storage_settings()
+
+
+def test_s3_object_store_scopes_input_keys_to_user() -> None:
+    user = AuthenticatedUser(
+        subject="user-subject-123",
+        username="person@example.com",
+        email="person@example.com",
+    )
+
+    key = S3ObjectStore.input_key(
+        object.__new__(S3ObjectStore),
+        user,
+        "Pilot_Study",
+        "file-123",
+        "../network.raw",
+    )
+
+    assert key == f"users/{user.storage_namespace}/projects/Pilot_Study/inputs/file-123/network.raw"
 
 
 def test_webapi_configuration_and_export_endpoints(tmp_path, monkeypatch) -> None:

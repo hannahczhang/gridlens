@@ -22,7 +22,12 @@ from gridlens.core.validation import (
     validate_mpi_processes,
 )
 from gridlens.gui.configuration_view_models import InputConfigurationValues, render_input_configuration_xml, save_input_configuration
-from gridlens.webapi.backends import FilesystemProjectRepository, LocalDockerJobRunner, LocalObjectStore
+from gridlens.webapi.backends import (
+    FilesystemProjectRepository,
+    LocalDockerJobRunner,
+    load_storage_settings,
+    object_store_from_settings,
+)
 from gridlens.webapi.service import (
     build_run_request,
     ensure_projects_root,
@@ -107,7 +112,8 @@ def create_app() -> FastAPI:
     app.state.projects_root = ensure_projects_root(os.environ.get("GRIDLENS_API_PROJECTS_ROOT"))
     app.state.runtime = ApiRuntimeState()
     app.state.project_repository = FilesystemProjectRepository(app.state.projects_root)
-    app.state.object_store = LocalObjectStore()
+    app.state.storage_settings = load_storage_settings()
+    app.state.object_store = object_store_from_settings(app.state.storage_settings)
     app.state.job_runner = LocalDockerJobRunner(
         app.state.runtime.executor,
         app.state.runtime.run_jobs,
@@ -130,6 +136,15 @@ def create_app() -> FastAPI:
     @app.get("/api/auth")
     def get_auth() -> dict[str, Any]:
         return auth_metadata(app.state.auth_settings)
+
+    @app.get("/api/storage")
+    def get_storage() -> dict[str, Any]:
+        settings = app.state.storage_settings
+        return {
+            "backend": settings.backend,
+            "aws_region": settings.aws_region,
+            "s3_bucket_configured": bool(settings.s3_bucket),
+        }
 
     @app.get("/api/me")
     def get_me(user: AuthenticatedUser = Depends(get_current_user)) -> dict[str, Any]:
