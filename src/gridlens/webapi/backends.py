@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from gridlens.analysis.summary import export_run_zip
 from gridlens.core.project import Project, ProjectData
+from gridlens.core.validation import ValidationError
 from gridlens.runner.gridpack_runner import GridpackRunRequest, run_gridpack_case
 from gridlens.webapi.security import AuthenticatedUser
 from gridlens.webapi.service import (
@@ -27,6 +28,7 @@ from gridlens.webapi.service import (
 
 STORAGE_BACKEND_LOCAL = "local"
 STORAGE_BACKEND_S3 = "s3"
+MAX_PRESIGNED_UPLOAD_BYTES = 500 * 1024 * 1024
 
 
 @dataclass(slots=True, frozen=True)
@@ -145,7 +147,7 @@ class S3ObjectStore:
         return f"users/{user.storage_namespace}/projects/{project_id}"
 
     def input_key(self, user: AuthenticatedUser, project_id: str, file_id: str, file_name: str) -> str:
-        safe_name = Path(file_name).name
+        safe_name = validate_upload_file_name(file_name)
         return f"{self.user_project_prefix(user, project_id)}/inputs/{file_id}/{safe_name}"
 
     def presigned_upload_url(self, key: str, *, content_type: str = "application/octet-stream", expires_in: int = 900) -> str:
@@ -182,6 +184,26 @@ def _boto3_client(service_name: str, **kwargs: Any) -> Any:
     except ImportError as exc:  # pragma: no cover - depends on optional production dependency
         raise RuntimeError("boto3 is required when GRIDLENS_STORAGE_BACKEND=s3. Install gridlens with the web extras.") from exc
     return boto3.client(service_name, **kwargs)
+
+
+def validate_upload_file_name(file_name: str) -> str:
+    safe_name = Path(file_name).name
+    if not safe_name or safe_name != file_name:
+        raise ValidationError("Upload file name must be a local file name, not a path.")
+    if "\x00" in safe_name:
+        raise ValidationError("Upload file name contains an invalid character.")
+    if Path(safe_name).suffix.lower() not in {".raw", ".xml", ".csv", ".txt", ".dat"}:
+        raise ValidationError("Upload file must be a RAW, XML, CSV, TXT, or DAT file.")
+    return safe_name
+
+
+def validate_upload_size(size_bytes: int | None) -> None:
+    if size_bytes is None:
+        return
+    if size_bytes < 0:
+        raise ValidationError("Upload size must be zero or greater.")
+    if size_bytes > MAX_PRESIGNED_UPLOAD_BYTES:
+        raise ValidationError("Upload file is too large for direct upload.")
 
 
 class LocalDockerJobRunner:

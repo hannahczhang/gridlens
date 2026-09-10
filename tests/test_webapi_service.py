@@ -5,7 +5,7 @@ import json
 import pytest
 
 from gridlens.core.project import Project
-from gridlens.webapi.backends import S3ObjectStore, load_storage_settings
+from gridlens.webapi.backends import S3ObjectStore, load_storage_settings, validate_upload_file_name, validate_upload_size
 from gridlens.webapi.security import AuthenticatedUser
 from gridlens.webapi.service import list_projects, load_project_configuration, load_run, projects_root_for_user, read_run_status, resolve_run_file
 
@@ -150,10 +150,21 @@ def test_s3_object_store_scopes_input_keys_to_user() -> None:
         user,
         "Pilot_Study",
         "file-123",
-        "../network.raw",
+        "network.raw",
     )
 
     assert key == f"users/{user.storage_namespace}/projects/Pilot_Study/inputs/file-123/network.raw"
+
+
+def test_upload_validation_rejects_paths_and_large_files() -> None:
+    assert validate_upload_file_name("network.raw") == "network.raw"
+    validate_upload_size(10)
+
+    with pytest.raises(Exception, match="local file name"):
+        validate_upload_file_name("../network.raw")
+
+    with pytest.raises(Exception, match="too large"):
+        validate_upload_size(501 * 1024 * 1024)
 
 
 def test_webapi_configuration_and_export_endpoints(tmp_path, monkeypatch) -> None:
@@ -231,6 +242,28 @@ def test_webapi_configuration_and_export_endpoints(tmp_path, monkeypatch) -> Non
     export_response = client.get(f"/api/projects/Pilot_Study/runs/{run_dir.name}/export")
     assert export_response.status_code == 200
     assert export_response.headers["content-type"] == "application/zip"
+
+
+def test_webapi_upload_presign_requires_s3_backend(tmp_path, monkeypatch) -> None:
+    if TestClient is None or create_app is None:
+        pytest.skip("FastAPI test client dependencies are not installed.")
+    projects_root = tmp_path / "api-projects"
+    monkeypatch.setenv("GRIDLENS_API_PROJECTS_ROOT", str(projects_root))
+    monkeypatch.setenv("GRIDLENS_STORAGE_BACKEND", "local")
+    client = TestClient(create_app())
+
+    network = tmp_path / "network.raw"
+    network.write_text("0 / END", encoding="utf-8")
+    project = Project("Pilot Study", projects_root / "Pilot_Study")
+    project.save([network], "")
+
+    response = client.post(
+        "/api/projects/Pilot_Study/uploads",
+        json={"file_name": "network.raw", "content_type": "application/octet-stream", "size_bytes": 10},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "S3 uploads are not enabled for this deployment."
 
 
 def test_webapi_rejects_more_than_18_mpi_processes(tmp_path, monkeypatch) -> None:

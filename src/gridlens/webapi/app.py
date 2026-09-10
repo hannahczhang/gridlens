@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from threading import Lock
 from typing import Any
+from uuid import uuid4
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,6 +28,7 @@ from gridlens.webapi.backends import (
     LocalDockerJobRunner,
     load_storage_settings,
     object_store_from_settings,
+    validate_upload_size,
 )
 from gridlens.webapi.service import (
     build_run_request,
@@ -107,6 +109,12 @@ class ConfigurationPayload(BaseModel):
         return InputConfigurationValues(**self.model_dump())
 
 
+class UploadRequestPayload(BaseModel):
+    file_name: str
+    content_type: str = "application/octet-stream"
+    size_bytes: int | None = None
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="GridLens API", version="0.1.0")
     app.state.projects_root = ensure_projects_root(os.environ.get("GRIDLENS_API_PROJECTS_ROOT"))
@@ -183,6 +191,60 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         return {"project": project_summary(project, project_data)}
+
+    @app.post("/api/projects/{project_id}/uploads")
+    def create_project_upload(
+        project_id: str,
+        payload: UploadRequestPayload,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        if not app.state.storage_settings.uses_s3:
+            raise HTTPException(status_code=409, detail="S3 uploads are not enabled for this deployment.")
+        try:
+            validate_upload_size(payload.size_bytes)
+            app.state.project_repository.load_project(user, project_id)
+            upload_id = uuid4().hex
+            object_key = app.state.object_store.input_key(user, project_id, upload_id, payload.file_name)
+            upload_url = app.state.object_store.presigned_upload_url(object_key, content_type=payload.content_type)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "upload_id": upload_id,
+            "method": "PUT",
+            "url": upload_url,
+            "s3_key": object_key,
+            "expires_in": 900,
+            "headers": {"Content-Type": payload.content_type},
+        }
+
+    @app.post("/api/projects/{project_id}/uploads/{upload_id}/complete")
+    def complete_project_upload(
+        project_id: str,
+        upload_id: str,
+        payload: UploadRequestPayload,
+        user: AuthenticatedUser = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        if not app.state.storage_settings.uses_s3:
+            raise HTTPException(status_code=409, detail="S3 uploads are not enabled for this deployment.")
+        try:
+            validate_upload_size(payload.size_bytes)
+            app.state.project_repository.load_project(user, project_id)
+            object_key = app.state.object_store.input_key(user, project_id, upload_id, payload.file_name)
+            metadata = app.state.object_store.head_object(object_key)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "upload_id": upload_id,
+            "s3_key": object_key,
+            "file_name": Path(payload.file_name).name,
+            "size_bytes": metadata.get("ContentLength"),
+            "etag": str(metadata.get("ETag") or "").strip('"'),
+            "ready": True,
+        }
 
     @app.get("/api/projects/{project_id}")
     def get_project(project_id: str, user: AuthenticatedUser = Depends(get_current_user)) -> dict[str, Any]:
