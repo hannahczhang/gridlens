@@ -86,6 +86,24 @@ export type OutputFileSummary = {
   suffix: string;
 };
 
+export type ProjectUploadResponse = {
+  upload_id: string;
+  method: "PUT";
+  url: string;
+  s3_key: string;
+  expires_in: number;
+  headers: Record<string, string>;
+};
+
+export type CompletedProjectUpload = {
+  upload_id: string;
+  s3_key: string;
+  file_name: string;
+  size_bytes: number;
+  etag: string;
+  ready: boolean;
+};
+
 export type UtilizationRow = {
   line_label: string;
   control_area?: string;

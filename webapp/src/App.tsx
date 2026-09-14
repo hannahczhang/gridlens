@@ -18,10 +18,12 @@ import {
   fetchRunLog,
   fetchRunOutputs,
   saveProjectConfiguration,
+  uploadProjectFileToS3,
 } from "./api";
 import { beginSignIn, clearAuthSession, initializeAuthSession, isAuthEnabled, signOut } from "./auth";
 import type {
   BranchOptions,
+  CompletedProjectUpload,
   CurrentUser,
   InputConfigurationValues,
   InteractiveAnalysis,
@@ -124,6 +126,7 @@ const defaultGraphVisibility: GraphVisibility = {
 };
 
 const maxHostedMpiProcesses = 18;
+const directS3UploadsEnabled = (import.meta.env.VITE_GRIDLENS_DIRECT_S3_UPLOADS || "").trim().toLowerCase() === "true";
 
 export default function App() {
   const [authEnabled, setAuthEnabled] = useState(isAuthEnabled());
@@ -158,6 +161,8 @@ export default function App() {
   const [projectName, setProjectName] = useState("");
   const [projectXmlFileName, setProjectXmlFileName] = useState("");
   const [projectInputFiles, setProjectInputFiles] = useState<File[]>([]);
+  const [directS3Files, setDirectS3Files] = useState<File[]>([]);
+  const [directS3Results, setDirectS3Results] = useState<CompletedProjectUpload[]>([]);
   const [runForm, setRunForm] = useState(defaultRunForm);
 
   useEffect(() => {
@@ -373,6 +378,35 @@ export default function App() {
       await refreshProjects();
       await refreshProject(project.project_id);
       setMessage(`Created project ${project.name}.`);
+    } catch (nextError) {
+      setError(errorMessage(nextError));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleDirectS3Upload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedProject) {
+      setError("Select a project before uploading files directly to S3.");
+      return;
+    }
+    if (!directS3Files.length) {
+      setError("Choose at least one file to upload directly to S3.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setDirectS3Results([]);
+    try {
+      const uploadedFiles: CompletedProjectUpload[] = [];
+      for (const file of directS3Files) {
+        uploadedFiles.push(await uploadProjectFileToS3(selectedProject.project_id, file));
+      }
+      setApiOffline(false);
+      setDirectS3Results(uploadedFiles);
+      setDirectS3Files([]);
+      setMessage(`Uploaded ${uploadedFiles.length} file${uploadedFiles.length === 1 ? "" : "s"} to S3.`);
     } catch (nextError) {
       setError(errorMessage(nextError));
     } finally {
@@ -676,6 +710,49 @@ export default function App() {
             {!projects.length ? <p className="muted">No projects yet.</p> : null}
           </div>
         </section>
+
+        {directS3UploadsEnabled ? (
+          <section className="panel panel-wide">
+            <div className="panel-header">
+              <div>
+                <h2>Direct S3 Upload</h2>
+                <p className="muted">
+                  Upload files directly from this browser to the selected project&apos;s private S3 prefix.
+                </p>
+              </div>
+              <span className="status-pill ready">Experimental</span>
+            </div>
+            <form className="stack" onSubmit={handleDirectS3Upload}>
+              <label>
+                S3 upload files
+                <input
+                  type="file"
+                  multiple
+                  onChange={(event) => setDirectS3Files(Array.from(event.target.files || []))}
+                />
+              </label>
+              <button type="submit" disabled={!selectedProject || !directS3Files.length}>
+                Upload Files to S3
+              </button>
+              {!selectedProject ? <p className="muted">Select a project before uploading files to S3.</p> : null}
+            </form>
+            {directS3Results.length ? (
+              <div className="s3-upload-results">
+                {directS3Results.map((result) => (
+                  <div key={result.upload_id} className="output-file-row">
+                    <div>
+                      <strong>{result.file_name}</strong>
+                      <p className="muted">
+                        {result.s3_key} • {formatBytes(result.size_bytes)}
+                      </p>
+                    </div>
+                    <span className="status-pill ready">{result.ready ? "Ready" : "Pending"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="panel panel-wide">
           <div className="panel-header">

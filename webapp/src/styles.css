@@ -555,6 +555,14 @@ button:disabled {
   margin: 4px 0 0;
 }
 
+.s3-upload-results {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-soft);
+}
+
 .checkbox-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

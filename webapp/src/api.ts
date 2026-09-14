@@ -1,12 +1,14 @@
 import type {
   AuthMetadata,
   BranchOptions,
+  CompletedProjectUpload,
   CurrentUser,
   InputConfigurationValues,
   InteractiveAnalysis,
   OutputFileSummary,
   ProjectConfigurationResponse,
   ProjectSummary,
+  ProjectUploadResponse,
   RunSummary,
 } from "./types";
 import { getAccessToken } from "./auth";
@@ -101,6 +103,52 @@ export async function createProject(data: {
     await authenticatedFetch(apiUrl("/api/projects"), { method: "POST", body: formData }),
   );
   return payload.project;
+}
+
+export async function requestProjectUpload(projectId: string, file: File): Promise<ProjectUploadResponse> {
+  return parseResponse(
+    await authenticatedFetch(apiUrl(`/api/projects/${projectId}/uploads`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_name: file.name,
+        content_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+      }),
+    }),
+  );
+}
+
+export async function uploadProjectFileToS3(projectId: string, file: File): Promise<CompletedProjectUpload> {
+  const upload = await requestProjectUpload(projectId, file);
+  const headers = new Headers(upload.headers);
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", file.type || "application/octet-stream");
+  }
+  const uploadResponse = await fetch(upload.url, {
+    method: upload.method,
+    headers,
+    body: file,
+  });
+  if (!uploadResponse.ok) {
+    const text = await uploadResponse.text();
+    throw new Error(text || `S3 upload failed with status ${uploadResponse.status}`);
+  }
+  return completeProjectUpload(projectId, upload.upload_id, file);
+}
+
+export async function completeProjectUpload(projectId: string, uploadId: string, file: File): Promise<CompletedProjectUpload> {
+  return parseResponse(
+    await authenticatedFetch(apiUrl(`/api/projects/${projectId}/uploads/${uploadId}/complete`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        file_name: file.name,
+        content_type: file.type || "application/octet-stream",
+        size_bytes: file.size,
+      }),
+    }),
+  );
 }
 
 export async function saveProjectConfiguration(data: {
