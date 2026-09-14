@@ -102,6 +102,7 @@ export type CompletedProjectUpload = {
   size_bytes: number;
   etag: string;
   ready: boolean;
+  project: ProjectSummary;
 };
 
 export type UtilizationRow = {

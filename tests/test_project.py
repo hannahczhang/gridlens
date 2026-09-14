@@ -55,6 +55,29 @@ class ProjectTests(unittest.TestCase):
             self.assertEqual([record.file_name for record in updated.input_files], ["case.raw", "input.xml"])
             self.assertTrue((project.original_inputs_dir / "input.xml").exists())
 
+    def test_save_external_input_adds_s3_project_input(self) -> None:
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "case.raw"
+            raw.write_text("raw", encoding="utf-8")
+
+            project = Project("S3 Input Project", root / "project")
+            data = project.save([raw], "")
+            updated = project.save_external_input(
+                data,
+                file_name="remote.raw",
+                storage_backend="s3",
+                object_key="users/test/projects/project/inputs/upload/remote.raw",
+                size_bytes=123,
+                etag="abc123",
+                content_type="application/octet-stream",
+            )
+
+            self.assertEqual([record.file_name for record in updated.input_files], ["case.raw", "remote.raw"])
+            self.assertEqual(updated.input_files[-1].storage_backend, "s3")
+            self.assertEqual(updated.input_files[-1].object_key, "users/test/projects/project/inputs/upload/remote.raw")
+            self.assertEqual(updated.input_files[-1].etag, "abc123")
+
     def test_copy_project_inputs_to_run(self) -> None:
         with TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -230,9 +230,21 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=409, detail="S3 uploads are not enabled for this deployment.")
         try:
             validate_upload_size(payload.size_bytes)
-            app.state.project_repository.load_project(user, project_id)
+            project, project_data = app.state.project_repository.load_project(user, project_id)
             object_key = app.state.object_store.input_key(user, project_id, upload_id, payload.file_name)
             metadata = app.state.object_store.head_object(object_key)
+            file_name = Path(payload.file_name).name
+            size_bytes = int(metadata.get("ContentLength") or payload.size_bytes or 0)
+            etag = str(metadata.get("ETag") or "").strip('"')
+            updated = project.save_external_input(
+                project_data,
+                file_name=file_name,
+                storage_backend="s3",
+                object_key=object_key,
+                size_bytes=size_bytes,
+                etag=etag,
+                content_type=payload.content_type,
+            )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ValidationError as exc:
@@ -240,10 +252,11 @@ def create_app() -> FastAPI:
         return {
             "upload_id": upload_id,
             "s3_key": object_key,
-            "file_name": Path(payload.file_name).name,
-            "size_bytes": metadata.get("ContentLength"),
-            "etag": str(metadata.get("ETag") or "").strip('"'),
+            "file_name": file_name,
+            "size_bytes": size_bytes,
+            "etag": etag,
             "ready": True,
+            "project": project_summary(project, updated),
         }
 
     @app.get("/api/projects/{project_id}")

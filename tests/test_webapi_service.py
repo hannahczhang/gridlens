@@ -5,7 +5,7 @@ import json
 import pytest
 
 from gridlens.core.project import Project
-from gridlens.webapi.backends import S3ObjectStore, load_storage_settings, validate_upload_file_name, validate_upload_size
+from gridlens.webapi.backends import S3ObjectStore, StorageSettings, load_storage_settings, validate_upload_file_name, validate_upload_size
 from gridlens.webapi.security import AuthenticatedUser
 from gridlens.webapi.service import list_projects, load_project_configuration, load_run, projects_root_for_user, read_run_status, resolve_run_file
 
@@ -264,6 +264,49 @@ def test_webapi_upload_presign_requires_s3_backend(tmp_path, monkeypatch) -> Non
 
     assert response.status_code == 409
     assert response.json()["detail"] == "S3 uploads are not enabled for this deployment."
+
+
+def test_webapi_complete_s3_upload_records_project_input(tmp_path, monkeypatch) -> None:
+    if TestClient is None or create_app is None:
+        pytest.skip("FastAPI test client dependencies are not installed.")
+    projects_root = tmp_path / "api-projects"
+    monkeypatch.setenv("GRIDLENS_API_PROJECTS_ROOT", str(projects_root))
+    monkeypatch.setenv("GRIDLENS_STORAGE_BACKEND", "local")
+    client = TestClient(create_app())
+
+    network = tmp_path / "network.raw"
+    network.write_text("0 / END", encoding="utf-8")
+    project = Project("Pilot Study", projects_root / "Pilot_Study")
+    project.save([network], "")
+
+    class FakeS3ObjectStore:
+        def input_key(self, user, project_id: str, file_id: str, file_name: str) -> str:
+            return f"users/{user.storage_namespace}/projects/{project_id}/inputs/{file_id}/{file_name}"
+
+        def head_object(self, key: str) -> dict:
+            return {"ContentLength": 42, "ETag": '"etag-value"'}
+
+    client.app.state.storage_settings = StorageSettings(backend="s3", aws_region="us-east-2", s3_bucket="test-bucket")
+    client.app.state.object_store = FakeS3ObjectStore()
+
+    response = client.post(
+        "/api/projects/Pilot_Study/uploads/upload-1/complete",
+        json={"file_name": "remote.raw", "content_type": "application/octet-stream", "size_bytes": 42},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ready"] is True
+    assert payload["project"]["input_files"] == ["network.raw", "remote.raw"]
+
+    updated = project.load_data()
+    local_namespace = AuthenticatedUser(subject="local-user", username="local-user", email="", is_authenticated=False).storage_namespace
+    assert updated.input_files[-1].file_name == "remote.raw"
+    assert updated.input_files[-1].storage_backend == "s3"
+    assert updated.input_files[-1].object_key == f"users/{local_namespace}/projects/Pilot_Study/inputs/upload-1/remote.raw"
+
+    _, network_names, _, _ = load_project_configuration(project, updated)
+    assert network_names == ["network.raw", "remote.raw"]
 
 
 def test_webapi_rejects_more_than_18_mpi_processes(tmp_path, monkeypatch) -> None:

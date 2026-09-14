@@ -68,6 +68,10 @@ class InputFileRecord:
     sha256: str
     size_bytes: int
     imported_at: str
+    storage_backend: str = "local"
+    object_key: str = ""
+    etag: str = ""
+    content_type: str = ""
 
 
 @dataclass(slots=True)
@@ -182,6 +186,43 @@ class Project:
         self.project_file.write_text(json.dumps(data.to_dict(), indent=2), encoding="utf-8")
         return data
 
+    def save_external_input(
+        self,
+        project_data: ProjectData,
+        *,
+        file_name: str,
+        storage_backend: str,
+        object_key: str,
+        size_bytes: int,
+        etag: str = "",
+        content_type: str = "",
+    ) -> ProjectData:
+        _validate_external_input(file_name, storage_backend, object_key, size_bytes)
+        self.create_directories()
+        record = InputFileRecord(
+            file_name=file_name,
+            source_path=f"{storage_backend}:{object_key}",
+            stored_path=f"{storage_backend}:{object_key}",
+            sha256="",
+            size_bytes=size_bytes,
+            imported_at=utc_timestamp(),
+            storage_backend=storage_backend,
+            object_key=object_key,
+            etag=etag,
+            content_type=content_type,
+        )
+        records = _upsert_input_file_record(project_data.input_files, record)
+        data = ProjectData(
+            name=project_data.name,
+            root_dir=project_data.root_dir,
+            created_at=project_data.created_at,
+            updated_at=utc_timestamp(),
+            xml_file_name=project_data.xml_file_name,
+            input_files=records,
+        )
+        self.project_file.write_text(json.dumps(data.to_dict(), indent=2), encoding="utf-8")
+        return data
+
     def load_data(self) -> ProjectData:
         raw = json.loads(self.project_file.read_text(encoding="utf-8"))
         return ProjectData.from_dict(raw)
@@ -231,6 +272,17 @@ def _validate_generated_xml_name(xml_file_name: str) -> None:
         raise ValidationError("Generated XML file name must be a local .xml file name.")
 
 
+def _validate_external_input(file_name: str, storage_backend: str, object_key: str, size_bytes: int) -> None:
+    if Path(file_name).name != file_name or not file_name:
+        raise ValidationError("External input file name must be a local file name.")
+    if not storage_backend:
+        raise ValidationError("External input storage backend is required.")
+    if not object_key:
+        raise ValidationError("External input object key is required.")
+    if size_bytes < 0:
+        raise ValidationError("External input size must be zero or greater.")
+
+
 def _upsert_input_file_record(
     records: list[InputFileRecord],
     generated_record: InputFileRecord,
@@ -252,6 +304,8 @@ def copy_project_inputs_to_run(project_data: ProjectData, run_dir: Path) -> list
     work_dir = run_dir / "work"
     copied = []
     for record in project_data.input_files:
+        if record.storage_backend != "local":
+            raise FileNotFoundError(f"Project input file is stored externally and cannot be copied locally yet: {record.file_name}")
         source = Path(record.stored_path)
         if not source.exists():
             raise FileNotFoundError(f"Project input file is missing: {source}")
