@@ -41,6 +41,7 @@ jobs:
           VITE_GRIDLENS_COGNITO_DOMAIN: ${{ vars.VITE_GRIDLENS_COGNITO_DOMAIN }}
           VITE_GRIDLENS_COGNITO_CLIENT_ID: ${{ vars.VITE_GRIDLENS_COGNITO_CLIENT_ID }}
           VITE_PUBLIC_BASE_PATH: ${{ vars.VITE_PUBLIC_BASE_PATH || format('/{0}/', github.event.repository.name) }}
+          VITE_GRIDLENS_DIRECT_S3_UPLOADS: ${{ vars.VITE_GRIDLENS_DIRECT_S3_UPLOADS }}
         run: npm run build
 
       - name: Configure GitHub Pages
