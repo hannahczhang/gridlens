@@ -166,10 +166,10 @@ class S3ObjectStore:
         return self.client.head_object(Bucket=self.settings.s3_bucket, Key=key)
 
     def read_run_log(self, run_dir: str | Path) -> str:
-        raise NotImplementedError("S3 run log reads will be enabled after runs write logs to S3 manifests.")
+        return ""
 
     def list_run_outputs(self, run_dir: str | Path) -> list[dict]:
-        raise NotImplementedError("S3 output listing will be enabled after runs write output manifests to S3.")
+        return []
 
     def resolve_run_file(self, run_dir: str | Path, relative_path: str) -> Path:
         raise NotImplementedError("S3 downloads will use presigned URLs instead of local file paths.")

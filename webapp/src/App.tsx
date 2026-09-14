@@ -405,14 +405,17 @@ export default function App() {
       }
       setApiOffline(false);
       setDirectS3Results(uploadedFiles);
-      setProjects((current) =>
-        current.map((project) =>
-          project.project_id === uploadedFiles[uploadedFiles.length - 1].project.project_id
-            ? uploadedFiles[uploadedFiles.length - 1].project
-            : project,
-        ),
-      );
-      setSelectedProject(uploadedFiles[uploadedFiles.length - 1].project);
+      const updatedProject = uploadedFiles[uploadedFiles.length - 1]?.project;
+      if (updatedProject) {
+        setProjects((current) =>
+          current.map((project) =>
+            project.project_id === updatedProject.project_id
+              ? updatedProject
+              : project,
+          ),
+        );
+        setSelectedProject(updatedProject);
+      }
       setDirectS3Files([]);
       await refreshProjectConfiguration(selectedProject.project_id);
       setMessage(`Uploaded ${uploadedFiles.length} file${uploadedFiles.length === 1 ? "" : "s"} to S3.`);
